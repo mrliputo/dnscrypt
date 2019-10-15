@@ -1,0 +1,69 @@
+#!/bin/bash
+
+dns_leak_test() {
+	echo ""
+	echo "Performing DNS leak test..."
+
+	host_info=$(eval "/usr/bin/nslookup -type=TXT resolver.dnscrypt.info")
+	ip=$(echo $host_info | sed 's/.*Resolver IP: \(.*\)".*/\1/')
+	asn_info=$(curl -s https://api.iptoasn.com/v1/as/ip/${ip} | jq -r '.as_description')
+
+	echo "ISP address: $ip"
+	echo "Description: $asn_info"
+	echo ""
+}
+
+service_status() {
+	status=$(launchctl list | grep dnscrypt-proxy)
+
+	if [ -z "$status" ]
+	then
+	      echo "dnscrypt-proxy is not running."
+	else
+	      echo "dnscrypt-proxy is running."
+	      echo $status
+	fi
+}
+
+start_service() {
+	echo "Configuring Cloudflare DNS resolver..."
+	/usr/local/opt/dnscrypt-proxy/dnscrypt-proxy -service start
+	/usr/sbin/networksetup -setdnsservers Wi-Fi 127.0.0.1 0.0.0.0
+}
+
+stop_service() {
+	echo "Restoring setting to ISP's default DNS server..."
+	/usr/sbin/networksetup -setdnsservers Wi-Fi "Empty"
+	/usr/local/opt/dnscrypt-proxy/dnscrypt-proxy -service stop
+}
+
+if [ "$EUID" -ne 0 ]
+then
+	echo "Please run as root"
+else
+	if [ "$1" = "start" ]
+	then
+		start_service
+		dns_leak_test
+	elif [ "$1" = "stop" ]
+	then
+		stop_service
+		dns_leak_test
+	elif [ "$1" = "status" ]
+	then
+		service_status
+		dns_leak_test
+	elif [ "$1" = "restart" ]
+	then
+		stop_service
+		start_service
+		dns_leak_test
+	else
+		echo "Unknown parameter: $1"
+	fi
+fi
+
+exit
+
+
+
